@@ -231,7 +231,9 @@ public class CsiManager
      */
     public synchronized List<Packet> queueOrPush(@Nonnull final Packet packet)
     {
-        queue.add(packet);
+        // Roster broadcasts can reuse and mutate a Presence stanza for another recipient.
+        // Keep a private snapshot in this session's CSI queue.
+        queue.add(packet instanceof Presence ? ((Presence) packet).createCopy() : packet);
 
         final boolean mustPush = !flushingOnActivate // Never flush while activation is in progress, as this can cause out-of-order delivery.
             && (   !DELAY_ENABLED.getValue() // The feature is disabled by configuration. Always send stanzas immediately.
@@ -277,15 +279,10 @@ public class CsiManager
             return false;
         }
 
+        // Compatibility policy for desktop clients: always deliver contact presence promptly,
+        // even when a client has sent CSI inactive. Other CSI optimizations remain enabled.
         if (stanza instanceof Presence) {
-            final Presence presence = (Presence) stanza;
-            if (presence.getType() == null || presence.getType() == Presence.Type.unavailable) {
-                // Presence updates are generally unimportant, unless it is a MUC self-presence stanza, as that suggests
-                // that the user joined or left a room.
-                final Element muc = presence.getChildElement("x", "http://jabber.org/protocol/muc#user");
-                final boolean isSelfPresence = muc != null && muc.elements("status").stream().anyMatch(status -> "110".equals(status.attributeValue("code")));
-                return !isSelfPresence;
-            }
+            return false;
         }
 
         if (stanza instanceof Message)

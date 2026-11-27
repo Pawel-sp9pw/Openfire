@@ -399,10 +399,10 @@ public class CsiManagerTest
     }
 
     /**
-     * Verifies that an available presence stanza <em>is</em> identified as a stanza that can be delayed/queued in context of CSI.
+     * Verifies that an available presence stanza <em>is not</em> identified as a stanza that can be delayed/queued in context of CSI.
      */
     @Test
-    public void testCanDelayAvailablePresenceReturnsTrue() throws Exception
+    public void testCanDelayAvailablePresenceReturnsFalse() throws Exception
     {
         // Setup test fixture - Note: Presence with type other than null/unavailable is not delayable
         final Packet presenceAvailable = parse("""
@@ -413,14 +413,14 @@ public class CsiManagerTest
         final boolean result = CsiManager.canDelay(presenceAvailable);
 
         // Verify result
-        assertTrue(result, "Available presence (type=null) should be delayable");
+        assertFalse(result, "Available presence must be delivered promptly");
     }
 
     /**
-     * Verifies that an unavailable presence stanza <em>is</em> identified as a stanza that can be delayed/queued in context of CSI.
+     * Verifies that an unavailable presence stanza <em>is not</em> identified as a stanza that can be delayed/queued in context of CSI.
      */
     @Test
-    public void testCanDelayUnavailablePresenceReturnsTrue() throws Exception
+    public void testCanDelayUnavailablePresenceReturnsFalse() throws Exception
     {
         // Setup test fixture
         final Packet presenceUnavailable = parse("""
@@ -430,7 +430,24 @@ public class CsiManagerTest
         final boolean result = CsiManager.canDelay(presenceUnavailable);
 
         // Verify result
-        assertTrue(result, "Unavailable presence should be delayable");
+        assertFalse(result, "Unavailable presence must be delivered promptly");
+    }
+
+    @Test
+    public void testInactiveClientReceivesPresenceUpdatesWithoutDelay() throws Exception
+    {
+        csiManager.deactivate();
+        for (Presence.Type type : new Presence.Type[] { null, Presence.Type.unavailable }) {
+            final Presence presence = new Presence();
+            presence.setType(type);
+            presence.setTo("alice@example.com");
+            final List<Packet> pushed = csiManager.queueOrPush(presence);
+            assertEquals(1, pushed.size());
+            assertEquals(type, ((Presence) pushed.get(0)).getType());
+            assertEquals(0, csiManager.getDelayQueueSize());
+            presence.setTo("bob@example.com");
+            assertEquals("alice@example.com", pushed.get(0).getTo().toString());
+        }
     }
 
     /**

@@ -47,13 +47,17 @@ public final class IQMessageCarbonsHandler extends IQHandler implements ServerFe
     public IQ handleIQ(IQ packet) {
         Element enable = packet.getChildElement();
         if (XMPPServer.getInstance().isLocal(packet.getFrom())) {
+            final ClientSession clientSession = sessionManager.getSession(packet.getFrom());
+            if (clientSession == null) {
+                final IQ error = IQ.createResultIQ(packet);
+                error.setError(PacketError.Condition.service_unavailable);
+                return error;
+            }
             if (enable.getName().equals("enable")) {
-                ClientSession clientSession = sessionManager.getSession(packet.getFrom());
                 clientSession.setMessageCarbonsEnabled(true);
                 return IQ.createResultIQ(packet);
 
             } else if (enable.getName().equals("disable")) {
-                ClientSession clientSession = sessionManager.getSession(packet.getFrom());
                 clientSession.setMessageCarbonsEnabled(false);
                 return IQ.createResultIQ(packet);
             } else {
