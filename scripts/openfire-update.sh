@@ -5,12 +5,13 @@ set -Eeuo pipefail
 umask 077
 
 REPO=https://github.com/Pawel-sp9pw/Openfire.git
-COMMIT=1d351a49d2d92be81940ac5b38a2cd1bcdedc9d7
+COMMIT=b6f58883b6f0fcc439c430d5a429ea30506dba7b
 SERVICE=openfire
 BACKUP_ROOT=/var/backups/openfire-sp9pw
 BUILDER=openfire-build
 CLASS1=org/jivesoftware/openfire/csi/CsiManager.class
 CLASS2=org/jivesoftware/openfire/handler/IQMessageCarbonsHandler.class
+CLASS3=org/jivesoftware/openfire/group/AbstractGroupProvider.class
 
 die() { printf 'BLAD: %s\n' "$*" >&2; exit 1; }
 say() { printf '\n== %s ==\n' "$*"; }
@@ -118,7 +119,7 @@ if [[ $1 == rollback && $# == 2 ]]; then
     if atomic_copy "$backup/original.jar" &&
        systemctl start "$SERVICE" && wait_health; then
         if [[ $(cat "$backup/held-before") == 0 ]]; then apt-mark unhold openfire; fi
-        echo 'Przywrocono oryginalny JAR. Baza PostgreSQL i konfiguracja nie byly odtwarzane.'
+        echo 'Przywrocono JAR sprzed ostatniej aktualizacji. Baza PostgreSQL i konfiguracja nie byly odtwarzane.'
     else
         echo 'Rollback nie przeszedl testu startu; proba powrotu do hotfixa.' >&2
         systemctl stop "$SERVICE" || true
@@ -187,17 +188,21 @@ git remote add origin "$2"
 git fetch --depth 1 origin "$3"
 git checkout -q --detach FETCH_HEAD
 [[ $(git rev-parse HEAD) == "$3" ]]
-bash ./mvnw -B -ntp -Dmaven.repo.local="$1/.m2/repository" -pl xmppserver -am     -Dtest=CsiManagerTest -Dsurefire.failIfNoSpecifiedTests=false verify
+bash ./mvnw -B -ntp -Dmaven.repo.local="$1/.m2/repository" -pl xmppserver -am     -Dtest=CsiManagerTest,AbstractGroupProviderTest -Dsurefire.failIfNoSpecifiedTests=false verify
 BUILD
 report="$work/src/xmppserver/target/surefire-reports/TEST-org.jivesoftware.openfire.csi.CsiManagerTest.xml"
 [[ -s $report ]] || die 'Maven nie wygenerowal raportu testow CSI.'
 grep -E 'tests="[1-9][0-9]*"' "$report" >/dev/null || die 'Nie wykonano testow CSI.'
 grep -F 'failures="0"' "$report" >/dev/null && grep -F 'errors="0"' "$report" >/dev/null ||
     die 'Testy CSI nie przeszly.'
+report="$work/src/xmppserver/target/surefire-reports/TEST-org.jivesoftware.openfire.group.AbstractGroupProviderTest.xml"
+[[ -s $report ]] || die "Brak raportu testow Shared Roster."
+grep -E 'tests="[1-9][0-9]*"' "$report" >/dev/null || die "Nie wykonano testow Shared Roster."
+grep -F 'failures="0"' "$report" >/dev/null && grep -F 'errors="0"' "$report" >/dev/null || die "Testy Shared Roster nie przeszly."
 classes="$work/src/xmppserver/target/classes"
 [[ -s "$classes/$CLASS1" && -s "$classes/$CLASS2" ]] || die 'Brak skompilowanych klas.'
-# Compare non-private binary signatures before replacing the two classes.
-for class in "$CLASS1" "$CLASS2"; do
+# Compare non-private binary signatures before replacing the three classes.
+for class in "$CLASS1" "$CLASS2" "$CLASS3"; do
     name=${class%.class}; name=${name//\//.}
     javap -package -s -classpath "$TARGET" "$name" >"$work/old.api"
     javap -package -s -classpath "$classes" "$name" >"$work/new.api"
@@ -231,11 +236,11 @@ tar -tf "$backup/files.tar" >/dev/null
 pg pg_dump -w --format=custom --dbname="$DB" >"$backup/postgres.dump"
 pg_restore -l "$backup/postgres.dump" >/dev/null
 
-# Update ONLY two class entries in the existing package JAR, retaining all other resources.
-jar --update --file "$backup/patched.jar" -C "$classes" "$CLASS1" -C "$classes" "$CLASS2"
+# Update ONLY three class entries in the existing package JAR, retaining all other resources.
+jar --update --file "$backup/patched.jar" -C "$classes" "$CLASS1" -C "$classes" "$CLASS2" -C "$classes" "$CLASS3"
 chown --reference="$backup/original.jar" "$backup/patched.jar"
 chmod --reference="$backup/original.jar" "$backup/patched.jar"
-for class in "$CLASS1" "$CLASS2"; do
+for class in "$CLASS1" "$CLASS2" "$CLASS3"; do
     unzip -p "$backup/patched.jar" "$class" | cmp - "$classes/$class" ||
         die "Weryfikacja klasy $class nie powiodla sie."
 done
