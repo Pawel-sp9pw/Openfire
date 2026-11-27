@@ -51,10 +51,12 @@ public abstract class AbstractGroupProvider implements GroupProvider {
 
     private static final Logger Log = LoggerFactory.getLogger(AbstractGroupProvider.class);
 
+    // Select only explicitly shared groups, including those without a groupList property.
     private static final String GROUPLIST_CONTAINERS =
-            "SELECT groupName from ofGroupProp " +
-            "WHERE name='" + Group.SHARED_ROSTER_GROUP_LIST_PROPERTY_KEY + "' " +
-            "AND (propValue LIKE ? OR (groupName = ? AND (propValue IS NULL OR LTRIM(propValue) = '') ))"; // using Ltrim instead of trim, as the latter wasn't supported in SQL Server prior to 2017.
+            "SELECT v.groupName, l.propValue FROM ofGroupProp v " +
+            "LEFT JOIN ofGroupProp l ON l.groupName = v.groupName AND l.name='" + Group.SHARED_ROSTER_GROUP_LIST_PROPERTY_KEY + "' " +
+            "WHERE v.name='" + Group.SHARED_ROSTER_SHOW_IN_ROSTER_PROPERTY_KEY + "' " +
+            "AND v.propValue='" + SharedGroupVisibility.usersOfGroups.getDbValue() + "'";
     private static final String PUBLIC_GROUPS_SQL =
             "SELECT groupName from ofGroupProp " +
             "WHERE name='" + Group.SHARED_ROSTER_SHOW_IN_ROSTER_PROPERTY_KEY + "' " +
@@ -362,11 +364,21 @@ public abstract class AbstractGroupProvider implements GroupProvider {
         try {
             con = DbConnectionManager.getConnection();
             pstmt = con.prepareStatement(GROUPLIST_CONTAINERS);
-            pstmt.setString(1, "%" + userGroup + "%");
-            pstmt.setString(2, userGroup);
             rs = pstmt.executeQuery();
             while (rs.next()) {
-                results.add(rs.getString(1));
+                final String groupName = rs.getString(1);
+                final String groupList = rs.getString(2);
+                // Membership in the shared group itself always grants visibility.
+                if (userGroup.equals(groupName)) {
+                    results.add(groupName);
+                } else if (groupList != null) {
+                    for (String candidate : groupList.split(",")) {
+                        if (userGroup.equals(candidate.trim())) {
+                            results.add(groupName);
+                            break;
+                        }
+                    }
+                }
             }
 
         } catch (SQLException sqle) {
@@ -376,7 +388,7 @@ public abstract class AbstractGroupProvider implements GroupProvider {
         }
 
         if (SHARED_GROUP_RECURSIVE.getValue()) {
-            for (final String result : results) {
+            for (final String result : new HashSet<>(results)) {
                 results.addAll(getVisibleGroupNames(result, visited));
             }
         }

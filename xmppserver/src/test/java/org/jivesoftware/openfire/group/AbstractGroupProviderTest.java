@@ -1530,6 +1530,36 @@ public class AbstractGroupProviderTest extends DBTestCase {
     }
 
     @Test
+    public void testOwnGroupRemainsVisibleWhenSharedWithOtherGroups() throws Exception {
+        final DefaultGroupProvider provider = new DefaultGroupProvider();
+        provider.createGroup("PB_GLIWICE").shareWithUsersInGroups(List.of("FUB_IT"), "Gliwice");
+        provider.createGroup("FUB_IT");
+        assertEquals(Set.of("PB_GLIWICE"), new HashSet<>(provider.getVisibleGroupNames("PB_GLIWICE")));
+        assertEquals(Set.of("PB_GLIWICE"), new HashSet<>(provider.getVisibleGroupNames("FUB_IT")));
+    }
+
+    @Test
+    public void testGroupNamesAreMatchedExactly() throws Exception {
+        final DefaultGroupProvider provider = new DefaultGroupProvider();
+        provider.createGroup("FUB_IT");
+        provider.createGroup("FUBXIT");
+        provider.createGroup("FUB_IT_INNI");
+        provider.createGroup("PB_A").shareWithUsersInGroups(List.of("FUB_IT_INNI", "FUBXIT"), "A");
+        provider.createGroup("PB_B").shareWithUsersInGroups(List.of("FUB_IT"), "B");
+        assertEquals(Set.of("PB_B"), new HashSet<>(provider.getVisibleGroupNames("FUB_IT")));
+    }
+
+    @Test
+    public void testSharedGroupWithoutGroupListRemainsVisibleToItself() throws Exception {
+        final DefaultGroupProvider provider = new DefaultGroupProvider();
+        final Group group = provider.createGroup("PB_A");
+        group.shareWithUsersInSameGroup("A");
+        group.getProperties().remove(Group.SHARED_ROSTER_GROUP_LIST_PROPERTY_KEY);
+        assertEquals(Set.of("PB_A"), new HashSet<>(provider.getVisibleGroupNames("PB_A")));
+        assertTrue(provider.getVisibleGroupNames("PB_B").isEmpty());
+    }
+
+    @Test
     public void testSearchByKeyAndValueReturnsGroup() throws Exception {
         final DefaultGroupProvider provider = new DefaultGroupProvider();
         provider.createGroup("Test Group A").shareWithNobody();
