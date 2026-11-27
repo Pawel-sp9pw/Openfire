@@ -178,7 +178,7 @@ fi
 [[ $(id -u "$BUILDER") != 0 ]] || die 'Konto budujace nie moze byc rootem.'
 work=$(mktemp -d /var/tmp/openfire-build.XXXXXXXX)
 chown "$BUILDER" "$work"
-runuser -u "$BUILDER" -- env -i HOME="$work" PATH=/usr/local/bin:/usr/bin:/bin     LANG=C.UTF-8 GIT_TERMINAL_PROMPT=0 bash -s -- "$work" "$REPO" "$COMMIT" <<'BUILD'
+runuser -u "$BUILDER" -- env -i HOME="$work" PATH=/usr/local/bin:/usr/bin:/bin     LANG=C.UTF-8 GIT_TERMINAL_PROMPT=0 MAVEN_USER_HOME="$work/.m2" JAVA_TOOL_OPTIONS="-Duser.home=$work" bash -s -- "$work" "$REPO" "$COMMIT" <<'BUILD'
 set -Eeuo pipefail
 cd "$1"
 git init -q src
@@ -187,7 +187,7 @@ git remote add origin "$2"
 git fetch --depth 1 origin "$3"
 git checkout -q --detach FETCH_HEAD
 [[ $(git rev-parse HEAD) == "$3" ]]
-bash ./mvnw -B -ntp -pl xmppserver -am     -Dtest=CsiManagerTest -Dsurefire.failIfNoSpecifiedTests=false verify
+bash ./mvnw -B -ntp -Dmaven.repo.local="$1/.m2/repository" -pl xmppserver -am     -Dtest=CsiManagerTest -Dsurefire.failIfNoSpecifiedTests=false verify
 BUILD
 report="$work/src/xmppserver/target/surefire-reports/TEST-org.jivesoftware.openfire.csi.CsiManagerTest.xml"
 [[ -s $report ]] || die 'Maven nie wygenerowal raportu testow CSI.'
